@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AudioVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum AudioSource {
+  USER
+  ADMIN
+}
+
+model Department {
+  id        Int          @id @default(autoincrement())
+  name      String
+  parentId  Int?
+  parent    Department?  @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children  Department[] @relation("DeptHierarchy")
+  users     User[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([name, parentId])
+}
+
+model User {
+  id           Int          @id @default(autoincrement())
+  name         String
+  nickname     String?
+  account      String       @unique
+  password     String
+  role         Role         @default(USER)
+  isBlocked    Boolean      @default(false)
+  departmentId Int?
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  audios       Audio[]
+  checkins     Checkin[]
+}
+
+model PlanDay {
+  id           Int       @id @default(autoincrement())
+  dayIndex     Int       @unique
+  title        String
+  scripture    String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  checkins     Checkin[]
+}
+
+model Audio {
+  id           Int             @id @default(autoincrement())
+  ownerId      Int
+  source       AudioSource
+  visibility   AudioVisibility @default(PUBLIC)
+  originalName String
+  filePath     String
+  folder       String?
+  durationSec  Int?
+  createdAt    DateTime        @default(now())
+  owner        User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  checkins     Checkin[]
+}
+
+model Checkin {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  planDayId    Int
+  audioId      Int
+  checkinDate  DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planDay      PlanDay   @relation(fields: [planDayId], references: [id], onDelete: Cascade)
+  audio        Audio     @relation(fields: [audioId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, planDayId])
+}
+
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  content   String
+  imageUrl  String?
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  adminId   Int
+  adminName String
+  action    String
+  target    String
+  detail    String?
+  createdAt DateTime @default(now())
+}

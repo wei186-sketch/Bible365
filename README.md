@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+﻿# Bible365 MVP
 
-## Getting Started
+移动端优先的 365 天读经打卡系统（用户上传音频 + 打卡 + 管理员上传公共音频）。
 
-First, run the development server:
+## 功能
+
+- 用户登录（账号密码）
+- 用户上传音频（mp3/m4a/wav，20MB以内）
+- 每日打卡（选择某天 + 选择自己的音频）
+- 打卡记录可视化（365天方格）
+- 音频广场（可听自己的、他人的、管理员上传的音频）
+- 管理员上传公共音频
+- 管理员查看用户列表
+
+## 一键启动（Docker）
+
+在仓库根目录执行：
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up -d --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+访问：`http://你的服务器IP:3000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+默认管理员（首次自动初始化）：
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- 账号：`admin`
+- 密码：`admin123`
 
-## Learn More
+## 本地开发
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+cd web
+pnpm install
+pnpm exec prisma generate
+pnpm exec prisma db push
+pnpm dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+开发环境数据库连接在 [`.env`](C:/Users/hfhfh/bible365/web/.env)。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 目录
 
-## Deploy on Vercel
+- 前端和API：[`/web/src/app`](C:/Users/hfhfh/bible365/web/src/app)
+- Prisma模型：[`/web/prisma/schema.prisma`](C:/Users/hfhfh/bible365/web/prisma/schema.prisma)
+- 上传目录：`/web/uploads`
+- 编排文件：[`/docker-compose.yml`](C:/Users/hfhfh/bible365/docker-compose.yml)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 备注
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 当前是 MVP 骨架，认证是轻量模式（请求头携带用户ID）。
+- 正式上线前建议加：JWT/Cookie会话、限流、审计日志、对象存储和备份策略。
+
