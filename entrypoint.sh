@@ -5,9 +5,7 @@ echo "=== Bible365 一键部署 ==="
 
 # Wait for DB
 echo "[1/3] 等待数据库就绪..."
-until curl -s "http://db:5432" >/dev/null 2>&1 || pg_isready -h db -U bible -d bible365 2>/dev/null; do
-  sleep 2
-done
+sleep 8
 echo "      数据库已就绪"
 
 # Run migrations
