@@ -49,8 +49,8 @@ export default function Home() {
       <div style={{ width:"100%",maxWidth:360,borderRadius:16,border:"1px solid #eee",padding:32,boxShadow:"0 4px 24px rgba(0,0,0,0.06)" }}>
         <div style={{ textAlign:"center",marginBottom:24 }}>
           <div style={{ width:56,height:56,borderRadius:12,background:"linear-gradient(135deg, #3b82f6, #10b981)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 16px" }}>📖</div>
-          <h1 style={{ fontSize:28,fontWeight:700,color:"#1f2937",margin:"0 0 4px" }}>365天读经打卡</h1>
-          <p style={{ fontSize:14,color:"#9ca3af",margin:0 }}>每日读经，日日蒙恩</p>
+          <h1 style={{ fontSize:28,fontWeight:700,color:"#1f2937",margin:"0 0 4px" }}>365天读书打卡</h1>
+          <p style={{ fontSize:14,color:"#9ca3af",margin:0 }}>每日读书，日日蒙恩</p>
         </div>
         <div style={{ marginBottom:16 }}>
           <label style={{ display:"block",fontSize:12,fontWeight:500,color:"#6b7280",marginBottom:4 }}>帐号</label>

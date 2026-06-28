@@ -4,6 +4,28 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/auditLog";
 
+
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const me = await currentUser(req);
+  if (!me || me.role !== "ADMIN") {
+    return NextResponse.json({ error: "只有管理员可以删除用户" }, { status: 403 });
+  }
+  const { id } = await ctx.params;
+  const userId = Number(id);
+  if (!Number.isFinite(userId)) {
+    return NextResponse.json({ error: "无效用户ID" }, { status: 400 });
+  }
+  if (userId === me.id) {
+    return NextResponse.json({ error: "不能删除自己" }, { status: 400 });
+  }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+  await prisma.checkin.deleteMany({ where: { userId } });
+  await prisma.audio.deleteMany({ where: { ownerId: userId } });
+  await prisma.user.delete({ where: { id: userId } });
+  await writeAuditLog({ adminId: me.id, adminName: me.name, action: "delete_user", target: user.account });
+  return NextResponse.json({ ok: true, message: "用户已删除" });
+}
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const me = await currentUser(req);
   if (!me || me.role !== "ADMIN") {

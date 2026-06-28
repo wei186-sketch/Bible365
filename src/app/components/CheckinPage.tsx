@@ -31,6 +31,21 @@ export default function CheckinPage({ me }: Props) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  const monthData = [
+    { name: "1月", start: 1, len: 31 },
+    { name: "2月", start: 32, len: 28 },
+    { name: "3月", start: 60, len: 31 },
+    { name: "4月", start: 91, len: 30 },
+    { name: "5月", start: 121, len: 31 },
+    { name: "6月", start: 152, len: 30 },
+    { name: "7月", start: 182, len: 31 },
+    { name: "8月", start: 213, len: 31 },
+    { name: "9月", start: 244, len: 30 },
+    { name: "10月", start: 274, len: 31 },
+    { name: "11月", start: 305, len: 30 },
+    { name: "12月", start: 335, len: 31 },
+  ];
+
   useEffect(() => {
     return () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -91,7 +106,6 @@ export default function CheckinPage({ me }: Props) {
     setRecording(false);
   };
 
-
   const xhrUpload = (url: string, formData: FormData, withCreds: boolean, onProgress: (pct: number) => void): Promise<string> => {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -123,17 +137,20 @@ export default function CheckinPage({ me }: Props) {
       formData.append("audio", recordBlob, recordFileName + ext);
       const text = await xhrUpload("/api/audios/upload", formData, false, setUploadProgress);
       let data: unknown = null;
-      try { data = text ? JSON.parse(text) : null; } catch { data = null; }
-      if (data && typeof data === "object" && "error" in data) {
-        throw new Error((data as { error: string }).error);
-      }
-      if (!data || typeof data !== "object") throw new Error("上传失败");
-      setMsg("录音上传成功！");
+      try { data = JSON.parse(text); } catch {}
+      const aid = data && typeof data === "object" && "id" in data ? (data as { id: number }).id : null;
+      setUploading(false);
+      setUploadProgress(100);
       setRecordBlob(null);
+      if (aid) {
+        setSelectedAudioId(aid);
+        setMsg("上传成功，可直接提交打卡");
+      } else {
+        setMsg("上传成功");
+      }
       const a = await api<AudioItem[]>("/api/audios");
       setAudios(a);
-    } catch (e) { setMsg((e as Error).message); }
-    finally { setUploading(false); setUploadProgress(0); }
+    } catch (e) { setMsg((e as Error).message); setUploading(false); }
   };
 
   const uploadFile = async (file: File) => {
@@ -144,19 +161,23 @@ export default function CheckinPage({ me }: Props) {
       formData.append("audio", file);
       const text = await xhrUpload("/api/audios/upload", formData, false, setUploadProgress);
       let data: unknown = null;
-      try { data = text ? JSON.parse(text) : null; } catch { data = null; }
-      if (data && typeof data === "object" && "error" in data) {
-        throw new Error((data as { error: string }).error);
+      try { data = JSON.parse(text); } catch {}
+      const aid = data && typeof data === "object" && "id" in data ? (data as { id: number }).id : null;
+      setUploading(false);
+      setUploadProgress(100);
+      if (aid) {
+        setSelectedAudioId(aid);
+        setMsg("上传成功，可直接提交打卡");
+      } else {
+        setMsg("上传成功");
       }
-      setMsg("文件上传成功！");
       const a = await api<AudioItem[]>("/api/audios");
       setAudios(a);
-    } catch (e) { setMsg((e as Error).message); }
-    finally { setUploading(false); setUploadProgress(0); }
+    } catch (e) { setMsg((e as Error).message); setUploading(false); }
   };
 
   const checkin = async () => {
-    if (!selectedAudioId) return setMsg("请先选择音频");
+    if (!selectedAudioId) { setMsg("请选择音频"); return; }
     try {
       await api("/api/checkins", {
         method: "POST",
@@ -183,16 +204,31 @@ export default function CheckinPage({ me }: Props) {
     <div className="space-y-4 pb-4">
       <section className="rounded-lg border bg-white p-3">
         <h2 className="mb-2 text-sm font-semibold text-gray-700">📅 年度概览 ({doneCount}/365)</h2>
-        <div className="grid grid-cols-[repeat(31,1fr)] gap-[2px]">
-          {Array.from({ length: 365 }).map((_, i) => {
-            const day = i + 1;
-            const isDone = !!grid[day];
-            const isToday = day === todayDayIndex;
-            const doneClass = isDone ? "bg-emerald-500" : isToday ? "bg-blue-200 ring-1 ring-blue-400" : "bg-gray-200";
-            const title = "第" + day + "天" + (isDone ? " ✅" : "");
+        <div className="space-y-[2px]">
+          {monthData.map((mon) => {
+            const cells: any[] = [];
+            for (let d = 0; d < 31; d++) {
+              if (d < mon.len) {
+                const dayIndex = mon.start + d;
+                const isDone = !!grid[dayIndex];
+                const isToday = dayIndex === todayDayIndex;
+                const cls = isDone ? "bg-emerald-500" : isToday ? "bg-blue-200 ring-1 ring-blue-400" : "bg-gray-200";
+                cells.push(
+                  <div key={dayIndex} title={mon.name + (d+1) + "日" + (isDone ? " ✅" : "")}
+                    className={"aspect-square rounded-[1px] text-[7px] flex items-center justify-center " + cls}>
+                    {isDone ? <span className="leading-none text-white">{d+1}</span> : isToday ? <span className="leading-none">{d+1}</span> : <span className="leading-none text-gray-500">{d+1}</span>}
+                  </div>
+                );
+              } else {
+                cells.push(<div key={mon.name + "-e" + d} className="aspect-square rounded-[1px]" />);
+              }
+            }
             return (
-              <div key={day} title={title} className={"aspect-square rounded-[1px] text-[6px] flex items-center justify-center " + doneClass}>
-                {isDone ? "✅" : ""}
+              <div key={mon.name} className="flex items-center gap-[2px]">
+                <span className="text-[9px] text-gray-400 w-5 shrink-0 text-right">{mon.name}</span>
+                <div className="grid grid-cols-[repeat(31,1fr)] gap-[2px] flex-1">
+                  {cells}
+                </div>
               </div>
             );
           })}

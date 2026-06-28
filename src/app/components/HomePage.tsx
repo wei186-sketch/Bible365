@@ -10,8 +10,12 @@ export default function HomePage({ me }: Props) {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [doneDays, setDoneDays] = useState(0);
   const [msg, setMsg] = useState("");
-  const [showAllActivity, setShowAllActivity] = useState(false);
+
   const [filterDate, setFilterDate] = useState("");
+  const [showAllToday, setShowAllToday] = useState(false);
+  const [yearUser, setYearUser] = useState<LeaderboardItem | null>(null);
+  const [yearGrid, setYearGrid] = useState<Record<number, string | null>>({});
+  const [yearLoading, setYearLoading] = useState(false);
 
   const todayDayIndex = (() => {
     const now = new Date();
@@ -35,17 +39,55 @@ export default function HomePage({ me }: Props) {
 
   
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   const filteredActivity = useMemo(() => {
-    if (!filterDate) return activity;
+    const targetDate = filterDate || todayStr;
     return activity.filter((a) => {
       const d = new Date(a.time);
-      return d.toISOString().slice(0, 10) === filterDate;
+      const localDate = d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+      return localDate === targetDate;
     });
   }, [activity, filterDate]);
 
-  const visibleActivity = showAllActivity ? filteredActivity : filteredActivity.slice(0, 10);
+  const visibleActivity = (!filterDate && !showAllToday) ? filteredActivity.slice(0, 10) : filteredActivity;
 
   const pct = Math.round((doneDays / todayDayIndex) * 100);
+
+  const openYearOverview = async (u: LeaderboardItem) => {
+    setYearUser(u);
+    setYearGrid({});
+    setYearLoading(true);
+    try {
+      const grid = await api<Record<number, string | null>>('/api/checkins/grid?userId=' + u.id);
+      setYearGrid(grid);
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+    setYearLoading(false);
+  };
+
+  const closeYearOverview = () => {
+    setYearUser(null);
+    setYearGrid({});
+  };
+
+  const monthData = [
+    { name: "1月", start: 1, len: 31 },
+    { name: "2月", start: 32, len: 28 },
+    { name: "3月", start: 60, len: 31 },
+    { name: "4月", start: 91, len: 30 },
+    { name: "5月", start: 121, len: 31 },
+    { name: "6月", start: 152, len: 30 },
+    { name: "7月", start: 182, len: 31 },
+    { name: "8月", start: 213, len: 31 },
+    { name: "9月", start: 244, len: 30 },
+    { name: "10月", start: 274, len: 31 },
+    { name: "11月", start: 305, len: 30 },
+    { name: "12月", start: 335, len: 31 },
+  ];
 
   return (
     <div className="space-y-4 pb-4">
@@ -81,17 +123,20 @@ export default function HomePage({ me }: Props) {
               className="rounded border p-1 text-xs w-28"
               type="date"
               value={filterDate}
-              onChange={(e) => { setFilterDate(e.target.value); setShowAllActivity(false); }}
+              onChange={(e) => { setFilterDate(e.target.value) }}
             />
             {filterDate && (
-              <button className="text-xs text-gray-400" onClick={() => setFilterDate("")}>清除</button>
+              <button className="text-xs text-gray-400" onClick={() => setFilterDate("")}>回到今天</button>
             )}
-            {filteredActivity.length > 10 && (
+            <span className="text-xs text-gray-400">
+              {filterDate || "今天"} · {filteredActivity.length} 条
+            </span>
+            {!filterDate && filteredActivity.length > 10 && (
               <button
                 className="text-xs text-blue-500"
-                onClick={() => setShowAllActivity(!showAllActivity)}
+                onClick={() => setShowAllToday(!showAllToday)}
               >
-                {showAllActivity ? `收起 (最近10条)` : `展开全部 (${activity.length}条)`}
+                {showAllToday ? "收起" : "展开全部"}
               </button>
             )}
           </div>
@@ -123,12 +168,67 @@ export default function HomePage({ me }: Props) {
               <span className={`w-6 text-center font-bold text-xs ${u.rank <= 3 ? "text-amber-500" : "text-gray-400"}`}>
                 {u.rank <= 3 ? ["🥇", "🥈", "🥉"][u.rank - 1] : `#${u.rank}`}
               </span>
-              <span className="flex-1 truncate">{displayName(u)}</span>
+              <span className="flex-1 truncate cursor-pointer hover:text-blue-600 hover:underline transition-colors" onClick={() => openYearOverview(u)}>{displayName(u)}</span>
               <span className="text-gray-500 text-xs">{u.checkins}天</span>
             </div>
           ))}
         </div>
       </section>
+      {/* Year overview modal */}
+      {yearUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeYearOverview}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b px-5 py-3 flex items-center justify-between rounded-t-xl">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">{displayName(yearUser)}</h3>
+                <p className="text-xs text-gray-400">{yearUser.checkins}天打卡</p>
+              </div>
+              <button className="text-gray-400 hover:text-gray-600 text-xl leading-none" onClick={closeYearOverview}>✕</button>
+            </div>
+            <div className="p-4">
+              {yearLoading ? (
+                <p className="text-center text-gray-400 py-8">加载中...</p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-400 mb-2">
+                    已完成 {Object.values(yearGrid).filter(Boolean).length}/365 天
+                  </p>
+                  <div className="space-y-[2px]">
+                    {monthData.map((mon) => {
+                      const cells = [];
+                      for (let d = 0; d < 31; d++) {
+                        if (d < mon.len) {
+                          const dayIndex = mon.start + d;
+                          const isDone = !!yearGrid[dayIndex];
+                          const isToday = dayIndex === todayDayIndex;
+                          const cls = isDone ? "bg-emerald-500" : isToday ? "bg-blue-200 ring-1 ring-blue-400" : "bg-gray-200";
+                          cells.push(
+                            <div key={dayIndex} title={mon.name + (d+1) + "日" + (isDone ? " ✅" : "")}
+                              className={"aspect-square rounded-[1px] text-[7px] flex items-center justify-center font-medium " + cls}>
+                              {isDone ? <span className="leading-none text-white">{d+1}</span> : isToday ? <span className="leading-none">{d+1}</span> : <span className="leading-none text-gray-500">{d+1}</span>}
+                            </div>
+                          );
+                        } else {
+                          cells.push(<div key={mon.name + "-e" + d} className="aspect-square rounded-[1px]" />);
+                        }
+                      }
+                      return (
+                        <div key={mon.name} className="flex items-center gap-[2px]">
+                          <span className="text-[9px] text-gray-400 w-5 shrink-0 text-right">{mon.name}</span>
+                          <div className="grid grid-cols-[repeat(31,1fr)] gap-[2px] flex-1">
+                            {cells}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {msg && <p className="text-sm text-red-500 text-center">{msg}</p>}
     </div>
   );

@@ -46,8 +46,8 @@ export default function LoginContent() {
         <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-emerald-400 text-2xl">
           📖
         </div>
-        <h1 className="mb-3 text-center text-3xl font-bold text-gray-800">365天读经打卡</h1>
-        <p className="mb-8 text-center text-sm text-gray-400">每日读经，日日蒙恩</p>
+        <h1 className="mb-3 text-center text-3xl font-bold text-gray-800">365天读书打卡</h1>
+        <p className="mb-8 text-center text-sm text-gray-400">每日读书，日日蒙恩</p>
 
         <label className="mb-1 block text-xs font-medium text-gray-500">账号</label>
         <input

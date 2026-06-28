@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
   const checkin = await prisma.checkin.upsert({
     where: { userId_planDayId: { userId: me.id, planDayId: day.id } },
-    update: { audioId, checkinDate: new Date() },
+    update: { audioId },
     create: {
       userId: me.id,
       planDayId: day.id,

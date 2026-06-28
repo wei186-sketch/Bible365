@@ -47,6 +47,20 @@ function UserManagement({ me }: { me: User }) {
   const [importCount, setImportCount] = useState(50);
   const [importPrefix, setImportPrefix] = useState("user");
 
+  // Edit modal state
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editNick, setEditNick] = useState("");
+  const [editAcc, setEditAcc] = useState("");
+  const [editPwd, setEditPwd] = useState("");
+  const [editDept, setEditDept] = useState("");
+  const [editBlocked, setEditBlocked] = useState(false);
+  const [editRole, setEditRole] = useState<"USER" | "ADMIN">("USER");
+
+  // CSV import
+  const [csvImportMsg, setCsvImportMsg] = useState("");
+  const [csvModifyMsg, setCsvModifyMsg] = useState("");
+
   const load = async () => {
     const [u, d] = await Promise.all([
       api<User[]>("/api/users"),
@@ -77,14 +91,57 @@ function UserManagement({ me }: { me: User }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ count: importCount, prefix: importPrefix, namePrefix: importPrefix }),
       });
-      setMsg(`批量导入完成: ${r.created}个，示例登录名: ${(r.sampleAccounts || []).join(", ")}`);
+      setMsg("批量导入完成: " + r.created + "个，示例: " + (r.sampleAccounts || []).join(", "));
+      load();
+    } catch (e) { setMsg((e as Error).message); }
+  };
+
+  const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvImportMsg("导入中...");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await api<{ created: number; skipped: number; message: string; errors?: string[] }>("/api/users/batch", {
+        method: "POST",
+        body: form,
+      });
+      setCsvImportMsg(r.message);
+      if (r.errors && r.errors.length > 0) setCsvImportMsg(r.message + " | 错误: " + r.errors.join("; "));
+      load();
+    } catch (err) { setCsvImportMsg((err as Error).message); }
+  };
+
+  const handleCsvModify = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvModifyMsg("修改中...");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await api<{ updated: number; notFound: number; message: string; errors?: string[] }>("/api/users/batch", {
+        method: "PUT",
+        body: form,
+      });
+      setCsvModifyMsg(r.message);
+      if (r.errors && r.errors.length > 0) setCsvModifyMsg(r.message + " | 错误: " + r.errors.join("; "));
+      load();
+    } catch (err) { setCsvModifyMsg((err as Error).message); }
+  };
+
+  const deleteUser = async (userId: number, account: string) => {
+    if (!confirm("确定删除用户 \"" + account + "\" 吗？该操作不可撤销！")) return;
+    try {
+      await api("/api/users/" + userId, { method: "DELETE" });
+      setMsg("已删除 " + account);
       load();
     } catch (e) { setMsg((e as Error).message); }
   };
 
   const userAction = async (userId: number, action: string, body: Record<string, unknown> = {}) => {
     try {
-      await api(`/api/users/${userId}`, {
+      await api("/api/users/" + userId, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...body }),
@@ -93,8 +150,39 @@ function UserManagement({ me }: { me: User }) {
     } catch (e) { setMsg((e as Error).message); }
   };
 
+  const openEdit = (u: User) => {
+    setEditingUser(u);
+    setEditName(u.name);
+    setEditNick(u.nickname || "");
+    setEditAcc(u.account);
+    setEditPwd("");
+    setEditDept(u.departmentId ? String(u.departmentId) : "");
+    setEditBlocked(u.isBlocked || false);
+    setEditRole(u.role);
+  };
+
+  const saveEdit = async () => {
+    if (!editingUser) return;
+    try {
+      const actions: Promise<any>[] = [];
+      if (editName !== editingUser.name) actions.push(userAction(editingUser.id, "setName", { name: editName }));
+      if (editAcc !== editingUser.account) actions.push(userAction(editingUser.id, "setAccount", { account: editAcc }));
+      if ((editNick || null) !== (editingUser.nickname || null)) actions.push(userAction(editingUser.id, "setNickname", { nickname: editNick || null }));
+      if (editPwd) actions.push(userAction(editingUser.id, "resetPassword", { newPassword: editPwd }));
+      if (editBlocked !== editingUser.isBlocked) actions.push(userAction(editingUser.id, "setBlocked", { isBlocked: editBlocked }));
+      if (editRole !== editingUser.role) actions.push(userAction(editingUser.id, "setRole", { role: editRole }));
+      const newDeptId = editDept ? Number(editDept) : null;
+      if (newDeptId !== (editingUser.departmentId || null)) actions.push(userAction(editingUser.id, "setDepartment", { departmentId: newDeptId }));
+      await Promise.all(actions);
+      setMsg("修改成功");
+      setEditingUser(null);
+      load();
+    } catch (e) { setMsg((e as Error).message); }
+  };
+
   return (
     <div className="space-y-3">
+      {/* Create user */}
       <div className="rounded-lg border bg-white p-3 space-y-2">
         <h3 className="text-sm font-semibold">创建用户</h3>
         <div className="grid grid-cols-2 gap-2">
@@ -112,60 +200,200 @@ function UserManagement({ me }: { me: User }) {
             ))}
           </select>
         </div>
-        <button className="rounded bg-blue-600 px-3 py-2 text-sm text-white" onClick={createUser}>创建</button>
-        <div className="flex gap-2 items-center mt-2 pt-2 border-t">
-          <span className="text-xs text-gray-500">批量导入前缀:</span>
-          <input className="w-20 rounded border p-1 text-sm" value={importPrefix} onChange={(e) => setImportPrefix(e.target.value)} placeholder="user" />
-          <input className="w-16 rounded border p-1 text-sm" type="number" value={importCount} onChange={(e) => setImportCount(Number(e.target.value))} />
-          <button className="rounded border px-3 py-1 text-sm" onClick={batchImport}>批量导入</button>
+        <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white" onClick={createUser}>创建用户</button>
+      </div>
+
+      {/* CSV import */}
+      <div className="rounded-lg border bg-white p-3 space-y-2">
+        <h3 className="text-sm font-semibold">CSV 批量导入</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="rounded bg-emerald-600 px-3 py-1.5 text-xs text-white cursor-pointer hover:bg-emerald-700">
+            上传 CSV 导入
+            <input type="file" accept=".csv" className="hidden" onChange={handleCsvImport} />
+          </label>
+          <a href="/api/admin/templates?type=import" target="_blank" className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+            📥 下载导入模板
+          </a>
+        </div>
+        {csvImportMsg && <p className="text-xs text-gray-600">{csvImportMsg}</p>}
+      </div>
+
+      {/* CSV modify */}
+      <div className="rounded-lg border bg-white p-3 space-y-2">
+        <h3 className="text-sm font-semibold">CSV 批量修改</h3>
+        <p className="text-xs text-gray-400">通过 account 匹配用户，可修改姓名/昵称/密码/部门/登录名(newAccount列)</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="rounded bg-orange-500 px-3 py-1.5 text-xs text-white cursor-pointer hover:bg-orange-600">
+            上传 CSV 修改
+            <input type="file" accept=".csv" className="hidden" onChange={handleCsvModify} />
+          </label>
+          <a href="/api/admin/templates?type=modify" target="_blank" className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+            📥 下载修改模板
+          </a>
+          <a href="/api/admin/templates?type=users" target="_blank" className="rounded border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-100">
+            📤 导出当前用户
+          </a>
+        </div>
+        {csvModifyMsg && <p className="text-xs text-gray-600">{csvModifyMsg}</p>}
+      </div>
+
+      {/* Original batch import (keep) */}
+      <details className="rounded-lg border bg-white p-3">
+        <summary className="text-sm font-semibold cursor-pointer">批量生成用户 (按序号)</summary>
+        <div className="space-y-2 mt-2">
+          <div className="flex gap-2 items-end">
+            <div><label className="text-xs text-gray-500">数量</label><input type="number" className="w-20 rounded border p-1.5 text-sm ml-1" value={importCount} onChange={(e) => setImportCount(Number(e.target.value))} /></div>
+            <div><label className="text-xs text-gray-500">前缀</label><input className="w-24 rounded border p-1.5 text-sm ml-1" value={importPrefix} onChange={(e) => setImportPrefix(e.target.value)} /></div>
+            <button className="rounded bg-gray-600 px-3 py-1.5 text-sm text-white" onClick={batchImport}>生成</button>
+          </div>
+        </div>
+      </details>
+
+      {/* User count */}
+                  {/* User list */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        {/* Header bar */}
+        <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <span className="text-base">👥</span>
+            <span className="text-sm font-semibold text-gray-700">用户列表</span>
+            <span className="inline-flex items-center justify-center min-w-[22px] h-5 rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{users.length}</span>
+          </div>
+        </div>
+
+        {/* Desktop cards */}
+        <div className="hidden md:block divide-y divide-gray-100">
+          {users.map((u) => (
+            <div key={u.id} className={"group px-4 py-3 space-y-2 cursor-pointer transition-colors hover:bg-blue-50/30 " + (u.isBlocked ? "bg-red-50/20 hover:bg-red-50/40" : "")} onClick={() => openEdit(u)}>
+              {/* Row 1: identity */}
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-[11px] font-mono font-medium text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors shrink-0">{u.id}</span>
+                  <span className="text-sm font-semibold text-gray-800 truncate">{u.name}</span>
+                  {u.nickname && <span className="text-xs text-gray-400 truncate hidden sm:inline">{u.nickname}</span>}
+                  <span className={"inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium " + (u.role === "ADMIN" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500")}>{u.role}</span>
+                  <button className={"inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-all " + (u.isBlocked ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700")}
+                    onClick={(e) => { e.stopPropagation(); userAction(u.id, "setBlocked", { isBlocked: !u.isBlocked }); }}>
+                    {u.isBlocked ? "已封禁" : "正常"}
+                  </button>
+                </div>
+                <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <button className="rounded-lg px-2 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-100 transition-colors" onClick={() => openEdit(u)} title="编辑">✏️</button>
+                  <button className="rounded-lg px-2 py-1 text-[11px] font-medium text-amber-600 hover:bg-amber-100 transition-colors" onClick={() => userAction(u.id, "resetPassword", { newPassword: "123456" })} title="重置密码">🔑</button>
+                  <button className="rounded-lg px-2 py-1 text-[11px] font-medium text-red-500 hover:bg-red-100 transition-colors" onClick={() => deleteUser(u.id, u.account)} title="删除">🗑️</button>
+                </div>
+              </div>
+              {/* Row 2: details */}
+              <div className="flex items-center gap-4 text-[11px] text-gray-500 flex-wrap">
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-gray-300">@</span>
+                  <span className="text-gray-600 font-medium">{u.account}</span>
+                </span>
+                {u.nickname && <span className="sm:hidden text-gray-400">"{u.nickname}"</span>}
+                <span className="text-gray-300">|</span>
+                <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-gray-400">🏢</span>
+                  <select className="bg-transparent text-gray-600 cursor-pointer outline-none border-none p-0 text-[11px] font-medium hover:text-blue-600 transition-colors" value={u.departmentId || ""} onChange={(e) => userAction(u.id, "setDepartment", { departmentId: e.target.value ? Number(e.target.value) : null })}>
+                    <option value="">无部门</option>
+                    {depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </span>
+                <span className="text-gray-300">|</span>
+                <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-gray-400">🎭</span>
+                  <select className={"bg-transparent cursor-pointer outline-none border-none p-0 text-[11px] font-medium transition-colors " + (u.role === "ADMIN" ? "text-purple-600" : "text-gray-600")} value={u.role} onChange={(e) => userAction(u.id, "setRole", { role: e.target.value })}>
+                    <option value="USER">USER</option>
+                    <option value="ADMIN">ADMIN</option>
+                  </select>
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Mobile cards */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {users.map((u) => (
+            <div key={u.id} className={"p-3 space-y-2 cursor-pointer transition-colors hover:bg-gray-50 " + (u.isBlocked ? "bg-red-50/30" : "")} onClick={() => openEdit(u)}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-800">{u.name}</div>
+                  <div className="text-[11px] text-gray-400">@{u.account}</div>
+                </div>
+                <button className={"inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium " + (u.isBlocked ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700")}
+                  onClick={(e) => { e.stopPropagation(); userAction(u.id, "setBlocked", { isBlocked: !u.isBlocked }); }}>
+                  {u.isBlocked ? "封禁" : "正常"}
+                </button>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                <span className="bg-gray-100 rounded-full px-2 py-0.5">{u.role}</span>
+                <span>·</span>
+                <span>{u.department?.name || "无部门"}</span>
+                <span>·</span>
+                <span>{u.nickname || "无昵称"}</span>
+              </div>
+              <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                <button className="flex-1 rounded-lg bg-blue-50 py-1.5 text-[11px] font-medium text-blue-600" onClick={() => openEdit(u)}>编辑</button>
+                <button className="flex-1 rounded-lg bg-amber-50 py-1.5 text-[11px] font-medium text-amber-600" onClick={() => userAction(u.id, "resetPassword", { newPassword: "123456" })}>重置密码</button>
+                <button className="rounded-lg bg-red-50 px-3 py-1.5 text-[11px] font-medium text-red-500" onClick={() => deleteUser(u.id, u.account)}>删除</button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
-
-      <div className="space-y-2">
-        {users.map((u) => (
-          <div key={u.id} className="rounded-lg border bg-white p-2 text-sm">
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-medium">{displayName(u)}</span>
-              <span className="text-xs text-gray-400">登录名: {u.account}</span>
+{/* Edit modal */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setEditingUser(null)}>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold">编辑用户: {editingUser.account}</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-500">登录名</label>
+                <input className="w-full rounded border p-2 text-sm" value={editAcc} onChange={(e) => setEditAcc(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">用户名</label>
+                <input className="w-full rounded border p-2 text-sm" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">昵称</label>
+                <input className="w-full rounded border p-2 text-sm" value={editNick} onChange={(e) => setEditNick(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">新密码 (留空不修改)</label>
+                <input className="w-full rounded border p-2 text-sm" value={editPwd} onChange={(e) => setEditPwd(e.target.value)} placeholder="留空不修改" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">部门</label>
+                <select className="w-full rounded border p-2 text-sm" value={editDept} onChange={(e) => setEditDept(e.target.value)}>
+                  <option value="">无部门</option>
+                  {depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">角色</label>
+                <select className="w-full rounded border p-2 text-sm" value={editRole} onChange={(e) => setEditRole(e.target.value as "USER" | "ADMIN")}>
+                  <option value="USER">USER</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
+              </div>
             </div>
-            <div className="text-xs text-gray-500 mb-1">
-              {u.role === "ADMIN" && <span className="text-red-500 mr-1">[管理员]</span>}
-              {u.isBlocked && <span className="text-gray-400 mr-1">[已封禁]</span>}
-              {u.department && <span className="text-blue-400">{u.department.name}</span>}
-            </div>
-
-            {/* Edit fields */}
-            <div className="flex gap-1 flex-wrap items-center mb-1">
-              <input className="w-20 rounded border p-1 text-xs" placeholder="昵称" defaultValue={u.nickname ?? ""}
-                onBlur={(e) => { const v = e.target.value.trim(); if (v !== (u.nickname ?? "")) userAction(u.id, "setNickname", { nickname: v || null }); }} />
-              <input className="w-20 rounded border p-1 text-xs" placeholder="用户名" defaultValue={u.name}
-                onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== u.name) userAction(u.id, "setName", { name: v }); }} />
-              <input className="w-24 rounded border p-1 text-xs" placeholder="登录名" defaultValue={u.account}
-                onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== u.account) userAction(u.id, "setAccount", { account: v }); }} />
-            </div>
-
-            <div className="flex gap-1 flex-wrap">
-              <button className="rounded border px-2 py-1 text-xs" onClick={() => userAction(u.id, "resetPassword")}>重置密码</button>
-              <button className="rounded border px-2 py-1 text-xs" onClick={() => userAction(u.id, "setBlocked", { isBlocked: !u.isBlocked })}>
-                {u.isBlocked ? "解封" : "封禁"}
-              </button>
-              <button className="rounded border px-2 py-1 text-xs" onClick={() => userAction(u.id, "setRole", { role: u.role === "ADMIN" ? "USER" : "ADMIN" })}>
-                {u.role === "ADMIN" ? "降为用户" : "升为管理员"}
-              </button>
-              <select className="rounded border p-1 text-xs" value={u.departmentId ?? ""}
-                onChange={(e) => userAction(u.id, "setDepartment", { departmentId: e.target.value ? Number(e.target.value) : null })}>
-                <option value="">无部门</option>
-                {depts.map((d) => <option key={d.id} value={d.id}>{d.parentId ? "  " : ""}{d.name}{d.parentId ? "" : " (一级)"}</option>)}
-              </select>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={editBlocked} onChange={(e) => setEditBlocked(e.target.checked)} />
+              封禁用户
+            </label>
+            <div className="flex gap-2 justify-end">
+              <button className="rounded border px-4 py-2 text-sm" onClick={() => setEditingUser(null)}>取消</button>
+              <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white" onClick={saveEdit}>保存</button>
             </div>
           </div>
-        ))}
-      </div>
-      {msg && <p className="text-xs text-green-700">{msg}</p>}
+        </div>
+      )}
+
+      {msg && <p className="text-sm text-center text-green-700">{msg}</p>}
     </div>
   );
 }
-
 function DeptManagement({ me }: { me: User }) {
   const [depts, setDepts] = useState<Department[]>([]);
   const [newName, setNewName] = useState("");

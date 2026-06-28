@@ -9,9 +9,12 @@ export async function GET(req: NextRequest) {
 
   const userId = Number(req.nextUrl.searchParams.get("userId") || me.id);
 
-  // Only admin can view others
+  // Allow admin or same-department users
   if (userId !== me.id && me.role !== "ADMIN") {
-    return NextResponse.json({ error: "无权查看他人打卡网格" }, { status: 403 });
+    const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { departmentId: true } });
+    if (!targetUser || !me.departmentId || targetUser.departmentId !== me.departmentId) {
+      return NextResponse.json({ error: "无权查看他人打卡网格" }, { status: 403 });
+    }
   }
 
   const checkins = await prisma.checkin.findMany({
