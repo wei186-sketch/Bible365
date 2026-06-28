@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# Remove proxy that may not be reachable from container
+unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
+
 echo "=== Bible365 一键部署 ==="
 
 # Wait for DB

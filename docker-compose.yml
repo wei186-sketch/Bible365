@@ -26,8 +26,6 @@ services:
       DATABASE_URL: "postgresql://bible:bible123@db:5432/bible365"
       JWT_SECRET: "change-me-in-production-please"
       NODE_ENV: production
-      HTTP_PROXY: http://192.168.1.115:7890
-      HTTPS_PROXY: http://192.168.1.115:7890
     depends_on:
       db:
         condition: service_healthy

@@ -9,7 +9,7 @@ const PORT = 3001;
 const UPLOAD_ROOT = path.join(__dirname, "..", "uploads");
 const JWT_SECRET = process.env.JWT_SECRET || "dev-jwt-secret-change-me";
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://bible:bible123@localhost:3032/bible365";
-const FFMPEG = path.join(__dirname, "..", "ffmpeg", "ffmpeg-8.1.1-essentials_build", "bin", "ffmpeg.exe");
+const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
@@ -67,8 +67,26 @@ function parseMultipart(raw, boundary) {
     const bodyStart = headerEnd + 4;
     const body = raw.subarray(bodyStart, partEnd);
     const nameMatch = headerStr.match(/name="([^"]+)"/);
-    const filenameMatch = headerStr.match(/filename="([^"]+)"/);
-    if (nameMatch) result[nameMatch[1]] = { filename: filenameMatch ? filenameMatch[1] : undefined, data: body };
+    let filenameMatch = headerStr.match(/filename\*=(.+?)(?:;|$)/);
+    let filename = null;
+    if (filenameMatch) {
+      const rfcVal = filenameMatch[1].trim();
+      const decMatch = rfcVal.match(/^(?:UTF-8|ISO-8859-1|US-ASCII)''(.+)$/i);
+      if (decMatch) {
+        try { filename = decodeURIComponent(decMatch[1].replace(/\+/g, " ")); } catch {}
+      }
+    }
+    if (!filename) {
+      const fnMatch2 = headerStr.match(/filename="([^"]+)"/);
+      if (fnMatch2) {
+        filename = fnMatch2[1];
+        // Safari may send percent-encoded filename in plain filename= field
+        if (/^%[0-9A-F]{2}/i.test(filename) || /%[0-9A-F]{2}/i.test(filename)) {
+          try { filename = decodeURIComponent(filename); } catch {}
+        }
+      }
+    }
+    if (nameMatch) result[nameMatch[1]] = { filename: filename || undefined, data: body };
   }
   return result;
 }
@@ -108,13 +126,15 @@ function audioDiskPath(userId) {
 }
 
 const server = createServer(async (req, res) => {
+  // Set CORS headers on all responses
+  const origin = req.headers.origin || "*";
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "Access-Control-Allow-Origin": "http://localhost:3031",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Allow-Credentials": "true",
-    });
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.writeHead(204);
     return res.end();
   }
 
@@ -160,6 +180,16 @@ const server = createServer(async (req, res) => {
         await mkdir(folder, { recursive: true });
         finalPath = path.join(folder, uid + ext);
         await writeFile(finalPath, filePart.data);
+        // Fix WebM duration using system ffmpeg
+        if (ext === ".webm") {
+          try {
+            const { execSync } = require("node:child_process");
+            const tmpPath = finalPath.replace(/\.webm$/, "_fixed.webm");
+            execSync(`ffmpeg -y -i "${finalPath}" -c copy -fflags +genpts "${tmpPath}" 2>/dev/null`, { timeout: 30000 });
+            const { rename, unlink: rmFixed } = require("node:fs/promises");
+            await rename(tmpPath, finalPath);
+          } catch {}
+        }
         const rel = path.relative(path.join(__dirname, ".."), finalPath).replaceAll("\\", "/");
 
         const audio = await prisma.audio.create({
@@ -167,7 +197,7 @@ const server = createServer(async (req, res) => {
         });
 
         console.log("[Upload] USER done: " + originalName);
-        res.writeHead(201, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "http://localhost:3031", "Access-Control-Allow-Credentials": "true" });
+        res.writeHead(201, { "Content-Type": "application/json" });
         return res.end(JSON.stringify(audio));
       }
 
@@ -215,7 +245,7 @@ const server = createServer(async (req, res) => {
       });
 
       console.log("[Upload] ADMIN done: " + displayName);
-      res.writeHead(201, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "http://localhost:3031", "Access-Control-Allow-Credentials": "true" });
+      res.writeHead(201, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(audio));
     } catch (error) {
       console.error("[Upload] Error:", error);

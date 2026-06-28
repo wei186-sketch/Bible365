@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { audioDiskPath } from "@/lib/storage";
 import { currentUser } from "@/lib/session";
+
+const execAsync = promisify(exec);
 
 export const maxDuration = 300;
 
@@ -18,6 +22,17 @@ async function readBody(req: NextRequest): Promise<Buffer> {
     chunks.push(Buffer.from(value));
   }
   return Buffer.concat(chunks);
+}
+
+
+function decodeRfc5987(value: string): string | null {
+  const match = value.match(/^(?:UTF-8|ISO-8859-1|US-ASCII)''(.+)$/i);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1].replace(/\+/g, " "));
+  } catch {
+    return null;
+  }
 }
 
 function parseMultipart(raw: Buffer, boundary: string): Record<string, { filename?: string; data: Buffer }> {
@@ -40,7 +55,21 @@ function parseMultipart(raw: Buffer, boundary: string): Record<string, { filenam
     if (bodyEnd > dataStart) {
       const body = raw.subarray(dataStart, bodyEnd);
       const nameMatch = headerStr.match(/name="([^"]+)"/);
-      const filenameMatch = headerStr.match(/filename="([^"]+)"/);
+      let filenameMatch = headerStr.match(/filename\*=(.+?)(?:;|$)/);
+      if (filenameMatch) {
+        const decoded = decodeRfc5987(filenameMatch[1].trim());
+        if (decoded) filenameMatch = [decoded, decoded];
+        else filenameMatch = null;
+      }
+      if (!filenameMatch) {
+        filenameMatch = headerStr.match(/filename="([^"]+)"/);
+        if (filenameMatch) {
+          const raw = filenameMatch[1];
+          if (/^%[0-9A-F]{2}/i.test(raw) || /%[0-9A-F]{2}/i.test(raw)) {
+            try { filenameMatch = [decodeURIComponent(raw), decodeURIComponent(raw)]; } catch {}
+          }
+        }
+      }
       if (nameMatch) result[nameMatch[1]] = { filename: filenameMatch ? filenameMatch[1] : undefined, data: body };
     }
   }
@@ -82,7 +111,7 @@ export async function POST(req: NextRequest) {
 
     const fileName = filePart.filename || "audio.mp3";
     const ext = path.extname(fileName).toLowerCase();
-    if (![".mp3", ".m4a", ".wav", ".webm"].includes(ext)) {
+    if (![".mp3", ".m4a", ".wav", ".webm", ".aac"].includes(ext)) {
       return NextResponse.json({ error: "\u4ec5\u652f\u6301 mp3/m4a/wav/webm" }, { status: 400 });
     }
     if (filePart.data.length > 200 * 1024 * 1024) {
@@ -95,6 +124,16 @@ export async function POST(req: NextRequest) {
     const diskPath = path.join(folder, diskName);
     const rel = path.relative(process.cwd(), diskPath).replaceAll("\\", "/");
     await writeFile(diskPath, filePart.data);
+
+    // Fix WebM duration metadata using ffmpeg (no re-encode, fast)
+    if (ext === ".webm") {
+      try {
+        const tmpPath = diskPath.replace(/\.webm$/, "_fixed.webm");
+        await execAsync(`ffmpeg -y -i "${diskPath}" -c copy -fflags +genpts "${tmpPath}" 2>/dev/null`);
+        await writeFile(diskPath, await readFile(tmpPath));
+        await unlink(tmpPath);
+      } catch { /* ignore ffmpeg errors, use original file */ }
+    }
 
     const audio = await prisma.audio.create({
       data: {

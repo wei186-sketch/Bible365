@@ -11,6 +11,8 @@ export default function FilesPage({ me }: Props) {
   const [msg, setMsg] = useState("");
   const [currentAudio, setCurrentAudio] = useState<string>("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -75,22 +77,69 @@ export default function FilesPage({ me }: Props) {
     } catch (e) { setMsg((e as Error).message); }
   };
 
+  const startRename = (audio: AudioItem) => {
+    setRenamingId(audio.id);
+    const dot = audio.originalName.lastIndexOf(".");
+    setRenameValue(dot > 0 ? audio.originalName.slice(0, dot) : audio.originalName);
+  };
+
+  const getExt = (name: string) => {
+    const dot = name.lastIndexOf(".");
+    return dot > 0 ? name.slice(dot) : "";
+  };
+
+  const saveRename = async (a: AudioItem) => {
+    const base = renameValue.trim();
+    if (!base) { setRenamingId(null); return; }
+    const ext = getExt(a.originalName);
+    const newName = base + ext;
+    try {
+      await api("/api/audios/" + a.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ originalName: newName }) });
+      setAudios((prev) => prev.map((x) => x.id === a.id ? { ...x, originalName: newName } : x));
+      setMsg("已重命名");
+    } catch (e) { setMsg((e as Error).message); }
+    setRenamingId(null);
+  };
+
+
+
   const playAudio = (id: number) => {
     setCurrentAudio(`/api/stream/${id}`);
     audioRef.current?.load();
     audioRef.current?.play().catch(() => {});
   };
 
-  const AudioRow = ({ a }: { a: AudioItem }) => (
+  const AudioRow = ({ a }: { a: AudioItem }) => {
+    const isRenaming = renamingId === a.id;
+    const canEdit = me.role === "ADMIN" || a.owner.id === me.id;
+    return (
     <div className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0 text-sm">
-      <span className="flex-1 truncate text-xs">{a.originalName}</span>
+      {isRenaming ? (
+        <span className="flex-1 flex items-center gap-0">
+          <input
+            className="flex-1 rounded border px-1 py-0 text-xs"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") saveRename(a); if (e.key === "Escape") setRenamingId(null); }}
+            onBlur={() => saveRename(a)}
+            autoFocus
+          />
+          <span className="text-xs text-gray-400 shrink-0">{getExt(a.originalName)}</span>
+        </span>
+      ) : (
+        <span className="flex-1 truncate text-xs">{a.originalName}</span>
+      )}
       <button className="shrink-0 rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-600" onClick={() => playAudio(a.id)}>播放</button>
       <a href={`/api/audios/${a.id}`} className="shrink-0 rounded bg-gray-50 px-2 py-0.5 text-xs text-gray-600">下载</a>
-      {(me.role === "ADMIN" || a.owner.id === me.id) && (
+      {canEdit && (
+        <button className="shrink-0 rounded bg-yellow-50 px-2 py-0.5 text-xs text-yellow-700" onClick={() => startRename(a)}>重命名</button>
+      )}
+      {canEdit && (
         <button className="shrink-0 rounded bg-red-50 px-2 py-0.5 text-xs text-red-600" onClick={() => removeAudio(a.id)}>删除</button>
       )}
     </div>
   );
+  };
 
   const MonthGroup = ({ month, items }: { month: string; items: AudioItem[] }) => (
     <div className="rounded border bg-white">

@@ -72,3 +72,29 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
   return NextResponse.json({ ok: true });
 }
+
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const me = await currentUser(req);
+  if (!me) return NextResponse.json({ error: "Please login first" }, { status: 401 });
+
+  const { id } = await ctx.params;
+  const audio = await prisma.audio.findUnique({ where: { id: Number(id) } });
+  if (!audio) return NextResponse.json({ error: "Audio not found" }, { status: 404 });
+  if (audio.ownerId !== me.id && me.role !== "ADMIN") {
+    return NextResponse.json({ error: "Can only rename your own audio" }, { status: 403 });
+  }
+
+  const body = await req.json();
+  const newName = (body.originalName || "").trim();
+  if (!newName || newName.length > 200) {
+    return NextResponse.json({ error: "Invalid name" }, { status: 400 });
+  }
+
+  const updated = await prisma.audio.update({
+    where: { id: audio.id },
+    data: { originalName: newName },
+  });
+
+  return NextResponse.json(updated);
+}
+
