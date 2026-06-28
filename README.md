@@ -1,53 +1,84 @@
-﻿# Bible365 MVP
+# Read365
 
-移动端优先的 365 天读经打卡系统（用户上传音频 + 打卡 + 管理员上传公共音频）。
+移动端优先的 365 天读书音频打卡系统。
 
 ## 功能
 
-- 用户登录（账号密码）
-- 用户上传音频（mp3/m4a/wav，20MB以内）
-- 每日打卡（选择某天 + 选择自己的音频）
-- 打卡记录可视化（365天方格）
-- 音频广场（可听自己的、他人的、管理员上传的音频）
-- 管理员上传公共音频
-- 管理员查看用户列表
+### 用户端
+- 账号密码登录
+- 上传音频（mp3/m4a/wav/webm/aac，支持大文件）
+- 在线录音并上传
+- 每日打卡（选择日期 + 音频）
+- 年度概览（365天月度格子图，每月一行）
+- 实时动态（当天打卡记录，支持日期筛选）
+- 排行榜（按打卡天数降序，同天数按当天最后打卡时间升序）
+- 同部门用户可查看彼此年度概览
 
-## 一键启动（Docker）
+### 管理员端
+- 用户管理：创建/编辑/删除/批量导入
+- CSV 批量导入/修改/导出用户
+- 部门管理
+- 公告管理
+- 文件管理（公共音频上传/分类）
+- 审计日志
+- 数据导出
 
-在仓库根目录执行：
+## 技术栈
 
-```bash
+- **前端**: Next.js 16 + React + Tailwind CSS
+- **后端**: Next.js API Routes
+- **数据库**: PostgreSQL 16 + Prisma ORM
+- **部署**: Docker Compose
+- **外网**: frp 隧道
+
+## 一键启动
+
+`ash
 docker compose up -d --build
-```
+`
 
-访问：`http://你的服务器IP:3000`
+访问：http://服务器IP:3000
 
-默认管理员（首次自动初始化）：
+默认管理员账号：
 
-- 账号：`admin`
-- 密码：`admin123`
+- 账号：dmin
+- 密码：dmin123
+
+## 目录结构
+
+`
+├── docker-compose.yml
+├── Dockerfile
+├── package.json
+├── next.config.ts
+├── prisma/
+│   └── schema.prisma
+├── public/
+└── src/
+    └── app/
+        ├── api/          # API 路由
+        ├── components/   # 页面组件
+        ├── login/        # 登录页
+        ├── layout.tsx    # 根布局
+        └── page.tsx      # 首页
+`
 
 ## 本地开发
 
-```bash
-cd web
+`ash
 pnpm install
 pnpm exec prisma generate
 pnpm exec prisma db push
 pnpm dev
-```
+`
 
-开发环境数据库连接在 [`.env`](C:/Users/hfhfh/bible365/web/.env)。
+## 环境变量
 
-## 目录
+| 变量 | 说明 |
+|------|------|
+| DATABASE_URL | PostgreSQL 连接串 |
+| JWT_SECRET | JWT 签名密钥 |
 
-- 前端和API：[`/web/src/app`](C:/Users/hfhfh/bible365/web/src/app)
-- Prisma模型：[`/web/prisma/schema.prisma`](C:/Users/hfhfh/bible365/web/prisma/schema.prisma)
-- 上传目录：`/web/uploads`
-- 编排文件：[`/docker-compose.yml`](C:/Users/hfhfh/bible365/docker-compose.yml)
+## 许可
 
-## 备注
-
-- 当前是 MVP 骨架，认证是轻量模式（请求头携带用户ID）。
-- 正式上线前建议加：JWT/Cookie会话、限流、审计日志、对象存储和备份策略。
-
+MIT
