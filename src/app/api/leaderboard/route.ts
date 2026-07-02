@@ -8,8 +8,9 @@ export async function GET(req: NextRequest) {
 
   const limit = Math.max(1, Math.min(200, Number(req.nextUrl.searchParams.get("limit")) || 100));
   const now = new Date();
-  // Beijing midnight = UTC midnight - 8h
-  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 8 * 3600000);
+  // Use Beijing date to compute local midnight in UTC
+  const bjNow = new Date(now.getTime() + 8 * 3600000);
+  const dayStart = new Date(Date.UTC(bjNow.getUTCFullYear(), bjNow.getUTCMonth(), bjNow.getUTCDate()) - 8 * 3600000);
   const dayEnd = new Date(dayStart.getTime() + 86400000);
 
   const users = await prisma.user.findMany({
